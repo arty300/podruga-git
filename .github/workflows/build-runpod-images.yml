@@ -54,6 +54,7 @@ jobs:
         with:
           context: ./poda
           file: ./poda/Dockerfile.base
+          pull: true
           push: true
           tags: ${{ env.DOCKER_NAMESPACE }}/${{ env.BASE_IMAGE }}:${{ env.BASE_TAG }}
           cache-from: type=registry,ref=${{ env.DOCKER_NAMESPACE }}/${{ env.BASE_IMAGE }}:buildcache
@@ -64,6 +65,7 @@ jobs:
         with:
           context: ./poda
           file: ./poda/Dockerfile
+          pull: true
           push: true
           build-args: |
             BASE_IMAGE=${{ env.DOCKER_NAMESPACE }}/${{ env.BASE_IMAGE }}:${{ env.BASE_TAG }}
