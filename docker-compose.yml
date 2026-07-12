@@ -1,0 +1,8 @@
+services:
+  bot:
+    build:
+      context: ./bot
+    image: drenk/elina-telegram-bot:latest
+    env_file:
+      - ./bot/bot.env
+    restart: unless-stopped

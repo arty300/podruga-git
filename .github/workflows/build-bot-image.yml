@@ -1,0 +1,51 @@
+name: Build Telegram Bot Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-bot-image.yml
+      - bot/**
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Bot image tag, for example latest or v1
+        required: true
+        default: latest
+
+env:
+  DOCKER_NAMESPACE: drenk
+  BOT_IMAGE: elina-telegram-bot
+  DEFAULT_IMAGE_TAG: latest
+
+jobs:
+  build:
+    name: Build and push Telegram bot image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push bot image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./bot
+          file: ./bot/Dockerfile
+          pull: true
+          push: true
+          tags: |
+            ${{ env.DOCKER_NAMESPACE }}/${{ env.BOT_IMAGE }}:${{ inputs.image_tag || env.DEFAULT_IMAGE_TAG }}
+            ${{ env.DOCKER_NAMESPACE }}/${{ env.BOT_IMAGE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.DOCKER_NAMESPACE }}/${{ env.BOT_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKER_NAMESPACE }}/${{ env.BOT_IMAGE }}:buildcache,mode=max

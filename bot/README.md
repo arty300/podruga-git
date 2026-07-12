@@ -9,6 +9,7 @@ Files:
 - `telegram_bot.py`: `python-telegram-bot` based Telegram bot and RunPod client.
 - `bot.env.example`: environment variable template.
 - `requirements.txt`: Python dependencies for the bot.
+- `Dockerfile`: container image for running the bot on a small hosting service.
 
 ## Setup
 
@@ -35,6 +36,64 @@ python3 -m venv .venv
 pip install -r requirements.txt
 python3 telegram_bot.py
 ```
+
+## Docker
+
+Local test with Docker Compose:
+
+```bash
+docker compose up --build bot
+```
+
+Or run the image directly:
+
+```bash
+docker build -t drenk/elina-telegram-bot:latest .
+docker run --env-file bot.env drenk/elina-telegram-bot:latest
+```
+
+GitHub Actions builds and pushes:
+
+```text
+drenk/elina-telegram-bot:latest
+```
+
+Required hosting environment variables:
+
+```bash
+TELEGRAM_BOT_TOKEN=...
+RUNPOD_API_KEY=...
+RUNPOD_ENDPOINT_ID=...
+TELEGRAM_ALLOWED_CHAT_IDS=...
+```
+
+Optional tuning variables are listed in `bot.env.example`.
+
+## Free hosting option
+
+Recommended first try: Render Background Worker.
+
+Create a new Render service:
+
+```text
+New -> Background Worker
+Repository: arty300/podruga-git
+Runtime: Docker
+Root Directory: bot
+Dockerfile Path: Dockerfile
+Instance Type: Free
+```
+
+Add at least these environment variables:
+
+```text
+TELEGRAM_BOT_TOKEN
+RUNPOD_API_KEY
+RUNPOD_ENDPOINT_ID
+TELEGRAM_ALLOWED_CHAT_IDS
+```
+
+Keep `TELEGRAM_ALLOWED_CHAT_IDS` set after testing so random users cannot spend RunPod credits through the bot.
 
 ## Messages
 
