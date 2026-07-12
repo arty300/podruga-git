@@ -7,3 +7,4 @@ torchaudio==2.4.1+cu121
 numpy<2
 opencv-python<4.12
 opencv-python-headless<4.12
+opencv-contrib-python-headless<4.12

@@ -7,7 +7,7 @@ NETWORK_COMFYUI_DIR="${NETWORK_COMFYUI_DIR:-}"
 ALLOW_RUNTIME_PIP_INSTALL="${ALLOW_RUNTIME_PIP_INSTALL:-0}"
 COPY_NETWORK_VOLUME="${COPY_NETWORK_VOLUME:-0}"
 BASE_PYTHON_IMPORTS="sqlalchemy alembic uvicorn filelock runpod requests websocket"
-CUSTOM_NODE_PYTHON_IMPORTS="blend_modes segment_anything insightface onnxruntime ultralytics piexif skimage cv2 openai diffusers accelerate peft transformers"
+CUSTOM_NODE_PYTHON_IMPORTS="blend_modes segment_anything insightface onnxruntime ultralytics dill numba facexlib piexif skimage cv2 openai diffusers accelerate peft transformers"
 
 copy_if_exists() {
     local source_dir="$1"
@@ -107,6 +107,19 @@ if missing:
     for item in missing:
         print(f"  - {item}")
     raise SystemExit(1)
+
+try:
+    import cv2
+    assert hasattr(cv2, "ximgproc") and hasattr(cv2.ximgproc, "guidedFilter")
+except Exception as exc:
+    print(f"Missing or broken Python imports:\n  - cv2.ximgproc.guidedFilter: {type(exc).__name__}: {exc}")
+    raise SystemExit(1)
+
+try:
+    from transformers import AutoModelForVision2Seq  # noqa: F401
+except Exception as exc:
+    print(f"Missing or broken Python imports:\n  - transformers.AutoModelForVision2Seq: {type(exc).__name__}: {exc}")
+    raise SystemExit(1)
 PY
 }
 
@@ -174,6 +187,7 @@ ensure_runtime_dependencies() {
     python3 -m pip install "SQLAlchemy>=2.0.0" alembic uvicorn filelock runpod requests websocket-client
     if [ -f /opt/custom-node-requirements.txt ]; then
         python3 -m pip install -r /opt/custom-node-requirements.txt -c /tmp/torch-cu121-constraints.txt --extra-index-url https://download.pytorch.org/whl/cu121
+        python3 -m pip install --force-reinstall "opencv-contrib-python-headless<4.12" -c /tmp/torch-cu121-constraints.txt
     else
         echo "WARNING: /opt/custom-node-requirements.txt not found; custom node dependencies were not installed"
     fi

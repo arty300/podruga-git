@@ -4,11 +4,15 @@
 numpy<2
 opencv-python<4.12
 opencv-python-headless<4.12
+opencv-contrib-python-headless<4.12
 blend-modes
 segment-anything
 insightface
 onnxruntime-gpu
 ultralytics
+dill
+numba
+facexlib
 piexif
 scikit-image
 scipy
@@ -18,7 +22,7 @@ openai
 diffusers
 accelerate
 peft
-transformers
+transformers>=4.46.0
 protobuf
 safetensors
 timm

@@ -66,7 +66,10 @@ def queue_prompt(workflow, client_id):
         json={"prompt": workflow, "client_id": client_id},
         timeout=REQUEST_TIMEOUT,
     )
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        raise RuntimeError(f"ComfyUI /prompt rejected workflow: {response.text}") from exc
     data = response.json()
 
     if "prompt_id" not in data:
