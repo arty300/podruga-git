@@ -1,0 +1,24 @@
+FROM runpod/base:0.4.0-cuda12.1.0
+
+RUN apt-get update && apt-get install -y \
+    curl git wget build-essential cmake pkg-config libgl1-mesa-glx libglib2.0-0 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/nvidia/nccl/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cublas/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cuda_runtime/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cuda_nvrtc/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cuda_cupti/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cudnn/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cufft/lib:/usr/local/lib/python3.10/dist-packages/nvidia/curand/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cusolver/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cusparse/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+
+COPY torch-cu121-constraints.txt /tmp/torch-cu121-constraints.txt
+COPY custom-node-requirements.txt /opt/custom-node-requirements.txt
+
+RUN python3 -m pip install --upgrade pip && \
+    python3 -m pip install -c /tmp/torch-cu121-constraints.txt torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 && \
+    python3 -m pip install runpod requests websocket-client pillow
+
+RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /comfyui
+RUN python3 -m pip install -r /comfyui/requirements.txt -c /tmp/torch-cu121-constraints.txt --extra-index-url https://download.pytorch.org/whl/cu121 && \
+    python3 -m pip install "SQLAlchemy>=2.0.0" alembic uvicorn filelock runpod requests websocket-client && \
+    python3 -m pip install -r /opt/custom-node-requirements.txt -c /tmp/torch-cu121-constraints.txt --extra-index-url https://download.pytorch.org/whl/cu121 && \
+    python3 -c "import torch, sqlalchemy, alembic, uvicorn, filelock, runpod, requests, websocket, blend_modes, segment_anything, insightface, onnxruntime, ultralytics, piexif, skimage, cv2, openai, diffusers, accelerate, peft, transformers; assert torch.version.cuda and torch.version.cuda.startswith('12.1'), torch.version.cuda"
+
+RUN mkdir -p /comfyui/models /comfyui/custom_nodes /comfyui/input /comfyui/output /comfyui/temp

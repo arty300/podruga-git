@@ -1,0 +1,72 @@
+name: Build RunPod Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Final worker image tag, for example v13
+        required: true
+        default: v13
+      build_base:
+        description: Rebuild the heavy CUDA/ComfyUI base image
+        required: true
+        type: boolean
+        default: false
+
+env:
+  DOCKER_NAMESPACE: drenk
+  BASE_IMAGE: elina-generator-base
+  WORKER_IMAGE: elina-generator
+  BASE_TAG: cu121-comfyui
+
+jobs:
+  build:
+    name: Build and push Docker images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          docker system prune -af
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push base image
+        if: ${{ inputs.build_base }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./poda
+          file: ./poda/Dockerfile.base
+          push: true
+          tags: ${{ env.DOCKER_NAMESPACE }}/${{ env.BASE_IMAGE }}:${{ env.BASE_TAG }}
+          cache-from: type=registry,ref=${{ env.DOCKER_NAMESPACE }}/${{ env.BASE_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKER_NAMESPACE }}/${{ env.BASE_IMAGE }}:buildcache,mode=max
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./poda
+          file: ./poda/Dockerfile
+          push: true
+          build-args: |
+            BASE_IMAGE=${{ env.DOCKER_NAMESPACE }}/${{ env.BASE_IMAGE }}:${{ env.BASE_TAG }}
+          tags: ${{ env.DOCKER_NAMESPACE }}/${{ env.WORKER_IMAGE }}:${{ inputs.image_tag }}
+          cache-from: type=registry,ref=${{ env.DOCKER_NAMESPACE }}/${{ env.WORKER_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKER_NAMESPACE }}/${{ env.WORKER_IMAGE }}:buildcache,mode=max

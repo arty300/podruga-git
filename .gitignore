@@ -1,0 +1,22 @@
+# Local environments
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+*.env
+bot/bot.env
+
+# Local logs and scratch files
+*.log
+logs*.txt
+logs (*).txt
+
+# Local Codex/agent metadata
+.codex/
+.agents/
+
+# Large local helper/downloaded files
+copyparty-sfx.py
