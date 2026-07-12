@@ -1,6 +1,12 @@
 name: Build RunPod Images
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-runpod-images.yml
+      - poda/**
   workflow_dispatch:
     inputs:
       image_tag:
@@ -18,6 +24,7 @@ env:
   BASE_IMAGE: elina-generator-base
   WORKER_IMAGE: elina-generator
   BASE_TAG: cu121-comfyui
+  DEFAULT_IMAGE_TAG: v13
 
 jobs:
   build:
@@ -49,7 +56,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push base image
-        if: ${{ inputs.build_base }}
+        if: ${{ github.event_name == 'push' || inputs.build_base }}
         uses: docker/build-push-action@v6
         with:
           context: ./poda
@@ -69,6 +76,6 @@ jobs:
           push: true
           build-args: |
             BASE_IMAGE=${{ env.DOCKER_NAMESPACE }}/${{ env.BASE_IMAGE }}:${{ env.BASE_TAG }}
-          tags: ${{ env.DOCKER_NAMESPACE }}/${{ env.WORKER_IMAGE }}:${{ inputs.image_tag }}
+          tags: ${{ env.DOCKER_NAMESPACE }}/${{ env.WORKER_IMAGE }}:${{ inputs.image_tag || env.DEFAULT_IMAGE_TAG }}
           cache-from: type=registry,ref=${{ env.DOCKER_NAMESPACE }}/${{ env.WORKER_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.DOCKER_NAMESPACE }}/${{ env.WORKER_IMAGE }}:buildcache,mode=max
