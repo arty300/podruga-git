@@ -1,5 +1,5 @@
 #!/bin/bash
-set -u
+set -euo pipefail
 
 echo "=== RunPod worker start.sh ==="
 echo "IMAGE_VERSION=${IMAGE_VERSION:-unknown}"
@@ -7,6 +7,7 @@ echo "IMAGE_VERSION=${IMAGE_VERSION:-unknown}"
 NETWORK_COMFYUI_DIR="${NETWORK_COMFYUI_DIR:-}"
 ALLOW_RUNTIME_PIP_INSTALL="${ALLOW_RUNTIME_PIP_INSTALL:-0}"
 COPY_NETWORK_VOLUME="${COPY_NETWORK_VOLUME:-0}"
+INSTALL_CUSTOM_NODE_REQUIREMENTS="${INSTALL_CUSTOM_NODE_REQUIREMENTS:-1}"
 BASE_PYTHON_IMPORTS="sqlalchemy alembic uvicorn filelock runpod requests websocket"
 CUSTOM_NODE_PYTHON_IMPORTS="blend_modes segment_anything insightface onnxruntime ultralytics dill numba facexlib piexif skimage cv2 openai diffusers accelerate peft transformers"
 
@@ -78,17 +79,67 @@ print_volume_diagnostics() {
 }
 
 install_custom_node_requirements() {
-    if [ "${INSTALL_CUSTOM_NODE_REQUIREMENTS:-0}" != "1" ]; then
-        echo "Skipping custom node requirements install"
+    if [ "$INSTALL_CUSTOM_NODE_REQUIREMENTS" != "1" ]; then
+        echo "Skipping persistent custom node requirements install"
         return
     fi
 
-    echo "=== Installing custom node requirements ==="
-    find /comfyui/custom_nodes -mindepth 2 -maxdepth 2 -name requirements.txt -print0 2>/dev/null |
-        while IFS= read -r -d '' requirements_file; do
-            echo "Installing ${requirements_file}"
-            python3 -m pip install -r "$requirements_file"
-        done
+    echo "=== Installing persistent custom node requirements ==="
+    mkdir -p "$PYTHON_DEPS_DIR"
+
+    local requirements_list="/tmp/custom-node-requirements-files.txt"
+    : > "$requirements_list"
+    if [ -f /opt/custom-node-requirements.txt ]; then
+        echo "/opt/custom-node-requirements.txt" >> "$requirements_list"
+    fi
+    find /comfyui/custom_nodes -mindepth 2 -maxdepth 2 -name requirements.txt -print 2>/dev/null | sort >> "$requirements_list"
+
+    if [ ! -s "$requirements_list" ]; then
+        echo "No custom node requirements found"
+        return
+    fi
+
+    echo "Requirement files:"
+    sed 's/^/  - /' "$requirements_list"
+
+    local requirements_hash
+    requirements_hash="$(while IFS= read -r requirements_file; do sha256sum "$requirements_file"; done < "$requirements_list" | sha256sum | awk '{print $1}')"
+    local marker_file="${PYTHON_DEPS_DIR}/.custom_node_requirements.sha256"
+
+    if [ "${FORCE_INSTALL_CUSTOM_NODE_REQUIREMENTS:-0}" != "1" ] && [ -f "$marker_file" ] && [ "$(cat "$marker_file")" = "$requirements_hash" ]; then
+        echo "Persistent custom node requirements already installed: ${requirements_hash}"
+        return
+    fi
+
+    while IFS= read -r requirements_file; do
+        echo "Installing ${requirements_file} into ${PYTHON_DEPS_DIR}"
+        python3 -m pip install \
+            --upgrade \
+            --target "$PYTHON_DEPS_DIR" \
+            -r "$requirements_file" \
+            -c /tmp/torch-cu121-constraints.txt \
+            --extra-index-url https://download.pytorch.org/whl/cu121
+    done < "$requirements_list"
+
+    echo "Ensuring opencv contrib package is first on PYTHONPATH"
+    python3 -m pip install \
+        --upgrade \
+        --force-reinstall \
+        --target "$PYTHON_DEPS_DIR" \
+        "opencv-contrib-python-headless<4.12" \
+        -c /tmp/torch-cu121-constraints.txt
+
+    echo "$requirements_hash" > "$marker_file"
+    echo "Persistent custom node requirements installed: ${requirements_hash}"
+}
+
+configure_persistent_python_deps() {
+    PYTHON_DEPS_DIR="${PYTHON_DEPS_DIR:-${NETWORK_COMFYUI_DIR}/python_deps/py310}"
+    mkdir -p "$PYTHON_DEPS_DIR"
+    export PYTHONPATH="${PYTHON_DEPS_DIR}:${PYTHONPATH:-}"
+    export PATH="${PYTHON_DEPS_DIR}/bin:${PATH}"
+    echo "=== Persistent Python deps ==="
+    echo "PYTHON_DEPS_DIR=${PYTHON_DEPS_DIR}"
 }
 
 check_python_imports() {
@@ -205,6 +256,7 @@ if [ -e "/comfyui/custom_nodes/*" ]; then
     rm -rf "/comfyui/custom_nodes/*"
 fi
 mkdir -p /comfyui/output /comfyui/temp
+configure_persistent_python_deps
 install_custom_node_requirements
 configure_python_cuda_library_path
 ensure_runtime_dependencies

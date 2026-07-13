@@ -51,14 +51,14 @@ ALLOW_RUNTIME_PIP_INSTALL=0
 COPY_NETWORK_VOLUME=0
 ```
 
-If copied custom nodes need Python packages from their own `requirements.txt`, set:
+By default, `start.sh` installs the bundled dependency list and every `requirements.txt` found under `/comfyui/custom_nodes` into a persistent Python target on the network volume:
 
 ```bash
 INSTALL_CUSTOM_NODE_REQUIREMENTS=1
+PYTHON_DEPS_DIR=/runpod-volume/ComfyUI/python_deps/py310
 ```
 
-For production, prefer adding missing custom-node packages to `custom-node-requirements.txt` and rebuilding `Dockerfile.base`.
-Do not rely on `INSTALL_CUSTOM_NODE_REQUIREMENTS=1` for normal starts: it installs packages while ComfyUI is importing nodes, which makes cold starts slow and can change PyTorch/CUDA packages.
+The first start after changing custom nodes can be slower. Later starts reuse the same persistent dependency folder unless the hash of custom-node requirement files changes.
 
 If startup logs show warnings like `models not found at /workspace/ComfyUI/models`, either the network volume is not mounted or its folder structure is different. Put assets under:
 
@@ -113,7 +113,7 @@ Avoid these settings unless debugging:
 ```bash
 ALLOW_RUNTIME_PIP_INSTALL=1
 COPY_NETWORK_VOLUME=1
-INSTALL_CUSTOM_NODE_REQUIREMENTS=1
+FORCE_INSTALL_CUSTOM_NODE_REQUIREMENTS=1
 ```
 
 They can add minutes to cold start time.
@@ -138,7 +138,7 @@ DOCKERHUB_TOKEN=<Docker Hub access token>
 Inputs:
 
 ```text
-image_tag=v14
+image_tag=v15
 build_base=true
 ```
 
@@ -147,7 +147,7 @@ Use `build_base=true` when CUDA/PyTorch/ComfyUI/dependencies changed. For small 
 After the workflow finishes, set the RunPod image to:
 
 ```text
-drenk/elina-generator:v14
+drenk/elina-generator:v15
 ```
 
 ### Option B: Local build
@@ -171,8 +171,8 @@ ModuleNotFoundError: No module named 'segment_anything'
 Then build the small deploy image when `rp_handler.py`, `start.sh`, or `elina_api.json` changes:
 
 ```bash
-docker build -t drenk/elina-generator:v14 .
-docker push drenk/elina-generator:v14
+docker build -t drenk/elina-generator:v15 .
+docker push drenk/elina-generator:v15
 ```
 
 Do not use `--no-cache` for normal rebuilds. Use it only when the base image itself must be rebuilt from scratch:
