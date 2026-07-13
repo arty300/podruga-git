@@ -17,7 +17,7 @@ on:
         description: Rebuild the heavy CUDA/ComfyUI base image
         required: true
         type: boolean
-        default: false
+        default: true
 
 env:
   DOCKER_NAMESPACE: drenk
