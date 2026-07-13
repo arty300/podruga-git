@@ -2,8 +2,6 @@
 # Install these during the base image build. Runtime pip installs make cold
 # starts slow and can silently replace CUDA/PyTorch packages.
 numpy<2
-opencv-python<4.12
-opencv-python-headless<4.12
 opencv-contrib-python-headless<4.12
 blend-modes
 segment-anything
@@ -30,3 +28,6 @@ einops
 ftfy
 addict
 yapf
+GitPython
+lark
+pyOpenSSL

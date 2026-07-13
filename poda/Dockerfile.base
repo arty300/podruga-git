@@ -10,16 +10,18 @@ ENV LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/nvidia/nccl/lib:/usr
 
 COPY torch-cu121-constraints.txt /tmp/torch-cu121-constraints.txt
 COPY custom-node-requirements.txt /opt/custom-node-requirements.txt
+COPY verify_base_imports.py /opt/verify_base_imports.py
 
 RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install -c /tmp/torch-cu121-constraints.txt torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 && \
     python3 -m pip install runpod requests websocket-client pillow
 
 RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /comfyui
-RUN python3 -m pip install -r /comfyui/requirements.txt -c /tmp/torch-cu121-constraints.txt --extra-index-url https://download.pytorch.org/whl/cu121 && \
-    python3 -m pip install "SQLAlchemy>=2.0.0" alembic uvicorn filelock runpod requests websocket-client && \
-    python3 -m pip install -r /opt/custom-node-requirements.txt -c /tmp/torch-cu121-constraints.txt --extra-index-url https://download.pytorch.org/whl/cu121 && \
-    python3 -m pip install --force-reinstall "opencv-contrib-python-headless<4.12" -c /tmp/torch-cu121-constraints.txt && \
-    python3 -c "import torch, sqlalchemy, alembic, uvicorn, filelock, runpod, requests, websocket, blend_modes, segment_anything, insightface, onnxruntime, ultralytics, dill, numba, facexlib, piexif, skimage, cv2, openai, diffusers, accelerate, peft, transformers; from transformers import AutoModelForVision2Seq; assert hasattr(cv2, 'ximgproc') and hasattr(cv2.ximgproc, 'guidedFilter'); assert torch.version.cuda and torch.version.cuda.startswith('12.1'), torch.version.cuda"
+RUN python3 -m pip install -r /comfyui/requirements.txt -c /tmp/torch-cu121-constraints.txt --extra-index-url https://download.pytorch.org/whl/cu121
+RUN python3 -m pip install "SQLAlchemy>=2.0.0" alembic uvicorn filelock runpod requests websocket-client
+RUN python3 -m pip install -r /opt/custom-node-requirements.txt -c /tmp/torch-cu121-constraints.txt --extra-index-url https://download.pytorch.org/whl/cu121
+RUN python3 -m pip uninstall -y opencv-python opencv-python-headless || true
+RUN python3 -m pip install --force-reinstall "opencv-contrib-python-headless<4.12" -c /tmp/torch-cu121-constraints.txt
+RUN python3 /opt/verify_base_imports.py
 
 RUN mkdir -p /comfyui/models /comfyui/custom_nodes /comfyui/input /comfyui/output /comfyui/temp
