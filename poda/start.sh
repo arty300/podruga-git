@@ -2,6 +2,7 @@
 set -u
 
 echo "=== RunPod worker start.sh ==="
+echo "IMAGE_VERSION=${IMAGE_VERSION:-unknown}"
 
 NETWORK_COMFYUI_DIR="${NETWORK_COMFYUI_DIR:-}"
 ALLOW_RUNTIME_PIP_INSTALL="${ALLOW_RUNTIME_PIP_INSTALL:-0}"
