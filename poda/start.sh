@@ -115,11 +115,6 @@ except Exception as exc:
     print(f"Missing or broken Python imports:\n  - cv2.ximgproc.guidedFilter: {type(exc).__name__}: {exc}")
     raise SystemExit(1)
 
-try:
-    from transformers import AutoModelForVision2Seq  # noqa: F401
-except Exception as exc:
-    print(f"Missing or broken Python imports:\n  - transformers.AutoModelForVision2Seq: {type(exc).__name__}: {exc}")
-    raise SystemExit(1)
 PY
 }
 

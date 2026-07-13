@@ -35,7 +35,6 @@ def main():
 
     import cv2
     import torch
-    from transformers import AutoModelForVision2Seq  # noqa: F401
 
     if not hasattr(cv2, "ximgproc") or not hasattr(cv2.ximgproc, "guidedFilter"):
         raise RuntimeError("opencv-contrib-python-headless is required: cv2.ximgproc.guidedFilter is missing")
