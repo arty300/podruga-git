@@ -7,7 +7,9 @@ echo "IMAGE_VERSION=${IMAGE_VERSION:-unknown}"
 NETWORK_COMFYUI_DIR="${NETWORK_COMFYUI_DIR:-}"
 ALLOW_RUNTIME_PIP_INSTALL="${ALLOW_RUNTIME_PIP_INSTALL:-0}"
 COPY_NETWORK_VOLUME="${COPY_NETWORK_VOLUME:-0}"
-INSTALL_CUSTOM_NODE_REQUIREMENTS="${INSTALL_CUSTOM_NODE_REQUIREMENTS:-1}"
+USE_PERSISTENT_PYTHON_DEPS="${USE_PERSISTENT_PYTHON_DEPS:-0}"
+INSTALL_CUSTOM_NODE_REQUIREMENTS="${INSTALL_CUSTOM_NODE_REQUIREMENTS:-0}"
+INSTALL_BAKED_CUSTOM_REQUIREMENTS_TO_VOLUME="${INSTALL_BAKED_CUSTOM_REQUIREMENTS_TO_VOLUME:-0}"
 BASE_PYTHON_IMPORTS="sqlalchemy alembic uvicorn filelock runpod requests websocket"
 CUSTOM_NODE_PYTHON_IMPORTS="blend_modes segment_anything insightface onnxruntime ultralytics dill numba facexlib piexif skimage cv2 openai diffusers accelerate peft transformers"
 
@@ -89,9 +91,13 @@ install_custom_node_requirements() {
 
     local requirements_list="/tmp/custom-node-requirements-files.txt"
     : > "$requirements_list"
-    if [ -f /opt/custom-node-requirements.txt ]; then
+
+    if [ "$INSTALL_BAKED_CUSTOM_REQUIREMENTS_TO_VOLUME" = "1" ] && [ -f /opt/custom-node-requirements.txt ]; then
         echo "/opt/custom-node-requirements.txt" >> "$requirements_list"
+    else
+        echo "Skipping baked custom requirements; they are already installed in the image"
     fi
+
     find /comfyui/custom_nodes -mindepth 2 -maxdepth 2 -name requirements.txt -print 2>/dev/null | sort >> "$requirements_list"
 
     if [ ! -s "$requirements_list" ]; then
@@ -119,6 +125,7 @@ install_custom_node_requirements() {
             -r "$requirements_file" \
             -c /tmp/torch-cu121-constraints.txt \
             --extra-index-url https://download.pytorch.org/whl/cu121
+        echo "Finished installing ${requirements_file}"
     done < "$requirements_list"
 
     echo "Ensuring opencv contrib package is first on PYTHONPATH"
@@ -134,6 +141,11 @@ install_custom_node_requirements() {
 }
 
 configure_persistent_python_deps() {
+    if [ "$USE_PERSISTENT_PYTHON_DEPS" != "1" ] && [ "$INSTALL_CUSTOM_NODE_REQUIREMENTS" != "1" ]; then
+        echo "=== Persistent Python deps disabled ==="
+        return
+    fi
+
     PYTHON_DEPS_DIR="${PYTHON_DEPS_DIR:-${NETWORK_COMFYUI_DIR}/python_deps/py310}"
     mkdir -p "$PYTHON_DEPS_DIR"
     export PYTHONPATH="${PYTHON_DEPS_DIR}:${PYTHONPATH:-}"
