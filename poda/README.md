@@ -139,7 +139,7 @@ Inputs:
 
 ```text
 image_tag=v17
-build_base=true
+build_base=false
 ```
 
 Use `build_base=true` when CUDA/PyTorch/ComfyUI/dependencies changed. For small worker-only changes, use `build_base=false`.
