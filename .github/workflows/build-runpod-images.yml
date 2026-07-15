@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Final worker image tag, for example v22
+        description: Final worker image tag, for example v23
         required: true
-        default: v22
+        default: v23
       build_base:
         description: Rebuild the heavy CUDA/ComfyUI base image
         required: true
@@ -24,7 +24,7 @@ env:
   BASE_IMAGE: elina-generator-base
   WORKER_IMAGE: elina-generator
   BASE_TAG: cu121-comfyui
-  DEFAULT_IMAGE_TAG: v22
+  DEFAULT_IMAGE_TAG: v23
 
 jobs:
   build:

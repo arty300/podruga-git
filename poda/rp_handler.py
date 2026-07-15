@@ -94,7 +94,8 @@ def connect_websocket(client_id):
     ws = websocket.WebSocket(timeout=WEBSOCKET_TIMEOUT)
     log("websocket_connect_start")
     ws.connect(f"{ws_url}/ws?clientId={client_id}", timeout=WEBSOCKET_CONNECT_TIMEOUT)
-    log("websocket_connect_ok")
+    ws.settimeout(WEBSOCKET_TIMEOUT)
+    log(f"websocket_connect_ok read_timeout={WEBSOCKET_TIMEOUT}")
     return ws
 
 

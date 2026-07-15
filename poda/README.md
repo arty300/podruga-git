@@ -146,7 +146,7 @@ DOCKERHUB_TOKEN=<Docker Hub access token>
 Inputs:
 
 ```text
-image_tag=v22
+image_tag=v23
 build_base=false
 ```
 
@@ -155,7 +155,7 @@ Use `build_base=true` when CUDA/PyTorch/ComfyUI/dependencies changed. For small 
 After the workflow finishes, set the RunPod image to:
 
 ```text
-drenk/elina-generator:v22
+drenk/elina-generator:v23
 ```
 
 ### Option B: Local build
@@ -179,8 +179,8 @@ ModuleNotFoundError: No module named 'segment_anything'
 Then build the small deploy image when `rp_handler.py`, `start.sh`, or `elina_api.json` changes:
 
 ```bash
-docker build -t drenk/elina-generator:v22 .
-docker push drenk/elina-generator:v22
+docker build -t drenk/elina-generator:v23 .
+docker push drenk/elina-generator:v23
 ```
 
 Do not use `--no-cache` for normal rebuilds. Use it only when the base image itself must be rebuilt from scratch:
