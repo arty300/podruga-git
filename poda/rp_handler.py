@@ -19,6 +19,7 @@ PROMPT_NODE_ID = os.getenv("PROMPT_NODE_ID", "6")
 SOURCE_IMAGE_NODE_ID = os.getenv("SOURCE_IMAGE_NODE_ID", "17")
 REQUEST_TIMEOUT = int(os.getenv("COMFYUI_REQUEST_TIMEOUT", "30"))
 WEBSOCKET_TIMEOUT = int(os.getenv("COMFYUI_WEBSOCKET_TIMEOUT", "900"))
+WEBSOCKET_CONNECT_TIMEOUT = int(os.getenv("COMFYUI_WEBSOCKET_CONNECT_TIMEOUT", "30"))
 
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
@@ -88,11 +89,17 @@ def queue_prompt(workflow, client_id):
     return data["prompt_id"]
 
 
-def wait_for_completion(prompt_id, client_id):
+def connect_websocket(client_id):
     ws_url = COMFYUI_URL.replace("http://", "ws://").replace("https://", "wss://")
     ws = websocket.WebSocket(timeout=WEBSOCKET_TIMEOUT)
+    log("websocket_connect_start")
+    ws.connect(f"{ws_url}/ws?clientId={client_id}", timeout=WEBSOCKET_CONNECT_TIMEOUT)
+    log("websocket_connect_ok")
+    return ws
+
+
+def wait_for_completion(ws, prompt_id):
     try:
-        ws.connect(f"{ws_url}/ws?clientId={client_id}", timeout=REQUEST_TIMEOUT)
         while True:
             raw_message = ws.recv()
             if isinstance(raw_message, bytes):
@@ -145,8 +152,13 @@ def get_output_images(prompt_id):
 
 def run_workflow(workflow):
     client_id = str(uuid.uuid4())
-    prompt_id = queue_prompt(workflow, client_id)
-    wait_for_completion(prompt_id, client_id)
+    ws = connect_websocket(client_id)
+    try:
+        prompt_id = queue_prompt(workflow, client_id)
+    except Exception:
+        ws.close()
+        raise
+    wait_for_completion(ws, prompt_id)
     output_images = get_output_images(prompt_id)
 
     result_paths = []
