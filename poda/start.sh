@@ -254,6 +254,64 @@ ensure_runtime_dependencies() {
     check_python_imports $BASE_PYTHON_IMPORTS $CUSTOM_NODE_PYTHON_IMPORTS
 }
 
+patch_impact_pack_differential_diffusion() {
+    local impact_file="/comfyui/custom_nodes/ComfyUI-Impact-Pack/modules/impact/impact_pack.py"
+    local utils_file="/comfyui/custom_nodes/ComfyUI-Impact-Pack/modules/impact/utils.py"
+
+    if [ ! -f "$impact_file" ]; then
+        echo "Impact Pack patch skipped: ${impact_file} not found"
+        return
+    fi
+
+    if ! grep -q "DifferentialDiffusion().apply(model)" "$impact_file"; then
+        echo "Impact Pack DifferentialDiffusion patch not needed"
+        return
+    fi
+
+    echo "=== Patching ComfyUI-Impact-Pack DifferentialDiffusion compatibility ==="
+    python3 - "$impact_file" "$utils_file" <<'PY'
+from pathlib import Path
+import sys
+
+impact_path = Path(sys.argv[1])
+utils_path = Path(sys.argv[2])
+
+impact_text = impact_path.read_text()
+old = "model = nodes_differential_diffusion.DifferentialDiffusion().apply(model)[0]"
+new = "model = utils.apply_differential_diffusion(model)"
+if old in impact_text:
+    impact_path.write_text(impact_text.replace(old, new))
+    print(f"Patched {impact_path}")
+else:
+    print(f"Patch target already absent in {impact_path}")
+
+if utils_path.exists():
+    utils_text = utils_path.read_text()
+    if "def apply_differential_diffusion(" not in utils_text:
+        utils_text += '''
+
+
+def apply_differential_diffusion(model):
+    from comfy_extras import nodes_differential_diffusion
+
+    node = nodes_differential_diffusion.DifferentialDiffusion()
+    if hasattr(node, "apply"):
+        return node.apply(model)[0]
+
+    result = node.execute(model)
+    if hasattr(result, "result"):
+        return result.result[0]
+    return result[0]
+'''
+        utils_path.write_text(utils_text)
+        print(f"Added apply_differential_diffusion helper to {utils_path}")
+    else:
+        print(f"apply_differential_diffusion helper already exists in {utils_path}")
+else:
+    raise SystemExit(f"Impact Pack utils file not found: {utils_path}")
+PY
+}
+
 NETWORK_COMFYUI_DIR="$(detect_network_comfyui_dir)"
 
 echo "=== Checking Network Volume ==="
@@ -270,6 +328,7 @@ fi
 mkdir -p /comfyui/output /comfyui/temp
 configure_persistent_python_deps
 install_custom_node_requirements
+patch_impact_pack_differential_diffusion
 configure_python_cuda_library_path
 ensure_runtime_dependencies
 ensure_torch_cuda121
