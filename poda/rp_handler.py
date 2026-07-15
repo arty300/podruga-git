@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 
@@ -24,6 +25,10 @@ SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
     "high quality, detailed, photorealistic, natural lighting",
 )
+
+
+def log(message):
+    print(f"[rp_handler] {message}", flush=True)
 
 
 def load_workflow():
@@ -58,6 +63,21 @@ def update_workflow_source(workflow, source_filename):
 
     source_node["inputs"]["image"] = source_filename
     return workflow
+
+
+def validate_default_source_image(workflow):
+    source_node = workflow.get(SOURCE_IMAGE_NODE_ID)
+    source_filename = source_node.get("inputs", {}).get("image") if source_node else None
+    if not source_filename:
+        return
+
+    source_path = Path(INPUT_DIR) / source_filename
+    if not source_path.exists():
+        raise FileNotFoundError(
+            f"No source_image was provided and default workflow image is missing: "
+            f"{source_path}. Send a photo with the Telegram prompt or put this file into "
+            f"the ComfyUI input folder on the RunPod network volume."
+        )
 
 
 def queue_prompt(workflow, client_id):
@@ -203,6 +223,7 @@ def save_source_image(source_image, task_id):
 
 
 def handler(job):
+    started_at = time.monotonic()
     job_input = job.get("input", {})
     if not isinstance(job_input, dict):
         return {"error": "Input must be a JSON object"}
@@ -217,8 +238,10 @@ def handler(job):
     result_paths = []
 
     try:
+        log(f"job_start prompt_len={len(user_prompt)} has_source_image={bool(source_image)}")
         if source_image:
             source_path = save_source_image(str(source_image), task_id)
+            log(f"source_image_saved path={source_path}")
 
         workflow = load_workflow()
         validate_workflow(workflow)
@@ -226,8 +249,12 @@ def handler(job):
 
         if source_path:
             workflow = update_workflow_source(workflow, os.path.basename(source_path))
+        else:
+            validate_default_source_image(workflow)
 
+        log("queue_prompt_start")
         result_paths = run_workflow(workflow)
+        log(f"workflow_completed output_count={len(result_paths)} elapsed={time.monotonic() - started_at:.1f}s")
 
         if not result_paths:
             return {"error": "Generation failed: no output images found"}
@@ -237,8 +264,10 @@ def handler(job):
             with open(path, "rb") as f:
                 output.append(base64.b64encode(f.read()).decode())
 
+        log(f"job_done image_count={len(output)} elapsed={time.monotonic() - started_at:.1f}s")
         return {"images": output}
     except Exception as exc:
+        log(f"job_error error={exc} elapsed={time.monotonic() - started_at:.1f}s")
         return {"error": str(exc)}
     finally:
         if source_path and os.path.exists(source_path):
