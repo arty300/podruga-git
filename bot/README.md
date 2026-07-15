@@ -69,6 +69,23 @@ TELEGRAM_ALLOWED_CHAT_IDS=...
 
 Optional tuning variables are listed in `bot.env.example`.
 
+## Prompt Rewriting
+
+The ComfyUI workflow expects a comma-separated positive prompt. The bot can rewrite natural user text before sending the job to RunPod.
+
+Enable it with:
+
+```bash
+PROMPT_REWRITE_ENABLED=1
+PROMPT_REWRITE_API_KEY=...
+PROMPT_REWRITE_BASE_URL=https://api.openai.com/v1
+PROMPT_REWRITE_MODEL=gpt-4o-mini
+PROMPT_REWRITE_FALLBACK_ON_ERROR=1
+```
+
+When disabled, the bot sends the user's text unchanged.
+If rewriting fails and fallback is enabled, the bot sends the original text instead of failing the generation.
+
 ## Free hosting option
 
 Recommended first try: Render Background Worker.
@@ -97,8 +114,8 @@ Keep `TELEGRAM_ALLOWED_CHAT_IDS` set after testing so random users cannot spend 
 
 ## Messages
 
-- Plain text: sent as `input.prompt`.
-- Photo with caption: caption is sent as `input.prompt`; the photo itself is ignored.
+- Plain text: optionally rewritten into a comma-separated prompt, then sent as `input.prompt`.
+- Photo with caption: caption is handled like text; the photo itself is ignored.
 - `/generate your prompt`: same as plain text, with `/generate` stripped.
 - `/health`: calls `GET /health` on the RunPod endpoint.
 

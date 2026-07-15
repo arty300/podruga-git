@@ -16,6 +16,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Messa
 
 RUNPOD_TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"}
 DEFAULT_ENV_FILE = Path(__file__).with_name("bot.env")
+DEFAULT_PROMPT_REWRITE_SYSTEM_PROMPT = (
+    "Rewrite the user's natural-language image request into a concise, comma-separated "
+    "positive prompt for a Stable Diffusion / ComfyUI workflow. Translate to English if "
+    "needed. Preserve the user's intent, convert sentences into visual tags and short "
+    "phrases, remove filler words, and return only the comma-separated prompt. Do not use "
+    "markdown, numbering, explanations, quotes, or a negative prompt."
+)
 
 
 def log_action(action, **fields):
@@ -38,9 +45,22 @@ class Config:
     max_workers: int
     execution_timeout_ms: int
     ttl_ms: int
+    prompt_rewrite_enabled: bool
+    prompt_rewrite_api_key: str
+    prompt_rewrite_base_url: str
+    prompt_rewrite_model: str
+    prompt_rewrite_timeout: int
+    prompt_rewrite_max_chars: int
+    prompt_rewrite_fallback_on_error: bool
+    prompt_rewrite_system_prompt: str
 
     @classmethod
     def from_env(cls):
+        prompt_rewrite_enabled = parse_bool(os.getenv("PROMPT_REWRITE_ENABLED", "0"))
+        prompt_rewrite_api_key = os.getenv("PROMPT_REWRITE_API_KEY", "")
+        if prompt_rewrite_enabled and not prompt_rewrite_api_key:
+            raise RuntimeError("Environment variable PROMPT_REWRITE_API_KEY is required when PROMPT_REWRITE_ENABLED=1")
+
         return cls(
             telegram_token=require_env("TELEGRAM_BOT_TOKEN"),
             runpod_api_key=require_env("RUNPOD_API_KEY"),
@@ -52,6 +72,14 @@ class Config:
             max_workers=int(os.getenv("BOT_MAX_WORKERS", "2")),
             execution_timeout_ms=int(os.getenv("RUNPOD_EXECUTION_TIMEOUT_MS", "900000")),
             ttl_ms=int(os.getenv("RUNPOD_TTL_MS", "1800000")),
+            prompt_rewrite_enabled=prompt_rewrite_enabled,
+            prompt_rewrite_api_key=prompt_rewrite_api_key,
+            prompt_rewrite_base_url=os.getenv("PROMPT_REWRITE_BASE_URL", "https://api.openai.com/v1"),
+            prompt_rewrite_model=os.getenv("PROMPT_REWRITE_MODEL", "gpt-4o-mini"),
+            prompt_rewrite_timeout=int(os.getenv("PROMPT_REWRITE_TIMEOUT", "30")),
+            prompt_rewrite_max_chars=int(os.getenv("PROMPT_REWRITE_MAX_CHARS", "1200")),
+            prompt_rewrite_fallback_on_error=parse_bool(os.getenv("PROMPT_REWRITE_FALLBACK_ON_ERROR", "1")),
+            prompt_rewrite_system_prompt=os.getenv("PROMPT_REWRITE_SYSTEM_PROMPT", DEFAULT_PROMPT_REWRITE_SYSTEM_PROMPT),
         )
 
 
@@ -87,6 +115,76 @@ def parse_allowed_chat_ids(value):
     if not value.strip():
         return set()
     return {int(part.strip()) for part in value.split(",") if part.strip()}
+
+
+def parse_bool(value):
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def clean_rewritten_prompt(value):
+    text = value.strip()
+    if text.startswith("```") and text.endswith("```"):
+        text = text.strip("`").strip()
+    text = text.strip("\"'")
+    text = text.replace("\n", ", ")
+    text = text.replace(";", ",")
+    parts = [part.strip() for part in text.split(",")]
+    return ", ".join(part for part in parts if part)
+
+
+class PromptRewriter:
+    def __init__(self, config):
+        self.enabled = config.prompt_rewrite_enabled
+        self.timeout = config.prompt_rewrite_timeout
+        self.max_chars = config.prompt_rewrite_max_chars
+        self.system_prompt = config.prompt_rewrite_system_prompt
+        self.fallback_on_error = config.prompt_rewrite_fallback_on_error
+        self.model = config.prompt_rewrite_model
+        self.base_url = config.prompt_rewrite_base_url.rstrip("/")
+        self.session = requests.Session()
+        if config.prompt_rewrite_api_key:
+            self.session.headers.update(
+                {
+                    "Authorization": f"Bearer {config.prompt_rewrite_api_key}",
+                    "Content-Type": "application/json",
+                }
+            )
+
+    def rewrite(self, prompt):
+        if not self.enabled:
+            log_action("prompt_rewrite_skipped", reason="disabled", prompt_len=len(prompt))
+            return prompt
+
+        source_prompt = prompt[: self.max_chars]
+        log_action("prompt_rewrite_start", prompt_len=len(prompt), clipped_len=len(source_prompt), model=self.model)
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": source_prompt},
+            ],
+            "temperature": 0.2,
+        }
+        try:
+            response = self.session.post(f"{self.base_url}/chat/completions", json=payload, timeout=self.timeout)
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise RuntimeError(f"Prompt rewrite returned no choices: {data}")
+
+            content = choices[0].get("message", {}).get("content", "")
+            rewritten = clean_rewritten_prompt(content)
+            if not rewritten:
+                raise RuntimeError("Prompt rewrite returned an empty prompt")
+        except Exception as exc:
+            if self.fallback_on_error:
+                log_action("prompt_rewrite_failed_fallback", error=type(exc).__name__)
+                return prompt
+            raise
+
+        log_action("prompt_rewrite_ok", rewritten_len=len(rewritten))
+        return rewritten
 
 
 class RunPodClient:
@@ -178,6 +276,7 @@ class BotHandlers:
     def __init__(self, config):
         self.config = config
         self.runpod = RunPodClient(config.runpod_api_key, config.runpod_endpoint_id, config.request_timeout)
+        self.prompt_rewriter = PromptRewriter(config)
         self.generation_slots = asyncio.Semaphore(config.max_workers)
 
     async def post_init(self, application):
@@ -262,10 +361,13 @@ class BotHandlers:
             if update.effective_message.photo:
                 log_update(update, "source_image_ignored", reason="workflow_uses_static_load_image")
 
+            rewritten_prompt = await asyncio.to_thread(self.prompt_rewriter.rewrite, prompt)
+            log_update(update, "generation_prompt_ready", original_len=len(prompt), rewritten_len=len(rewritten_prompt))
+
             await message.reply_text("Запрос отправлен в RunPod, жду генерацию.")
             await message.chat.send_action("upload_photo")
 
-            job_id, output = await asyncio.to_thread(self.generate_with_runpod, prompt)
+            job_id, output = await asyncio.to_thread(self.generate_with_runpod, rewritten_prompt)
             images = extract_images(output)
             log_update(update, "generation_output_received", job_id=job_id, image_count=len(images))
             if not images:
