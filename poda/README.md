@@ -6,7 +6,7 @@ Files:
 
 - `Dockerfile`: builds the RunPod worker image.
 - `start.sh`: copies models/custom nodes/input assets from the network volume, starts ComfyUI, then starts the RunPod handler.
-- `rp_handler.py`: receives RunPod jobs, writes the prompt into ComfyUI workflow node `6`, optionally writes a source image into node `17`, and returns base64 images.
+- `rp_handler.py`: receives RunPod jobs, writes the prompt into ComfyUI workflow node `6`, keeps workflow node `17` as the static `LoadImage`, and returns base64 images.
 - `elina_api.json`: ComfyUI API workflow. Do not edit it unless you intentionally change the generation graph.
 - `custom-node-requirements.txt`: Python dependency bundle for custom nodes stored on the network volume.
 
@@ -17,16 +17,14 @@ The handler expects:
 ```json
 {
   "input": {
-    "prompt": "user prompt",
-    "source_image": "optional base64 image or image URL"
+    "prompt": "user prompt"
   }
 }
 ```
 
 `prompt` is appended to `SYSTEM_PROMPT` and written to workflow node `6`.
-If `source_image` is provided, it is saved into the ComfyUI input directory and written to workflow node `17`.
-If `source_image` is not provided, node `17` keeps the image filename from `elina_api.json`.
-For the current workflow this means either send a photo with the Telegram prompt or make sure this file exists on the network volume:
+Node `17` is a static `LoadImage` node and always keeps the image filename from `elina_api.json`.
+The Telegram bot intentionally sends text only; photos are ignored. Make sure this file exists on the network volume:
 
 ```text
 <NETWORK_COMFYUI_DIR>/input/photo_2026-06-26_15-26-12.jpg
@@ -49,7 +47,6 @@ COMFYUI_OUTPUT_DIR=/comfyui/output
 COMFYUI_TEMP_DIR=/comfyui/temp
 COMFYUI_REQUEST_TIMEOUT=30
 COMFYUI_WEBSOCKET_TIMEOUT=900
-MAX_SOURCE_IMAGE_BYTES=12582912
 # Keep this disabled for fast cold starts. Use only for emergency debugging.
 ALLOW_RUNTIME_PIP_INSTALL=0
 # Default is symlinks from network volume. Set 1 only if you explicitly need copies.
@@ -148,7 +145,7 @@ DOCKERHUB_TOKEN=<Docker Hub access token>
 Inputs:
 
 ```text
-image_tag=v18
+image_tag=v19
 build_base=false
 ```
 
@@ -157,7 +154,7 @@ Use `build_base=true` when CUDA/PyTorch/ComfyUI/dependencies changed. For small 
 After the workflow finishes, set the RunPod image to:
 
 ```text
-drenk/elina-generator:v18
+drenk/elina-generator:v19
 ```
 
 ### Option B: Local build
@@ -181,8 +178,8 @@ ModuleNotFoundError: No module named 'segment_anything'
 Then build the small deploy image when `rp_handler.py`, `start.sh`, or `elina_api.json` changes:
 
 ```bash
-docker build -t drenk/elina-generator:v18 .
-docker push drenk/elina-generator:v18
+docker build -t drenk/elina-generator:v19 .
+docker push drenk/elina-generator:v19
 ```
 
 Do not use `--no-cache` for normal rebuilds. Use it only when the base image itself must be rebuilt from scratch:

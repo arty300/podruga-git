@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import io
 import json
 import logging
@@ -102,12 +101,11 @@ class RunPodClient:
             }
         )
 
-    def submit(self, prompt, source_image_b64, execution_timeout_ms, ttl_ms):
+    def submit(self, prompt, execution_timeout_ms, ttl_ms):
         log_action(
             "runpod_submit_start",
             endpoint_id=self.endpoint_id,
             prompt_len=len(prompt),
-            has_source_image=bool(source_image_b64),
             execution_timeout_ms=execution_timeout_ms,
             ttl_ms=ttl_ms,
         )
@@ -118,9 +116,6 @@ class RunPodClient:
                 "ttl": ttl_ms,
             },
         }
-        if source_image_b64:
-            payload["input"]["source_image"] = source_image_b64
-
         response = self.session.post(f"{self.base_url}/run", json=payload, timeout=self.timeout)
         response.raise_for_status()
         data = response.json()
@@ -208,7 +203,7 @@ class BotHandlers:
 
         log_update(update, "command_start_or_help")
         await update.effective_message.reply_text(
-            "Пришли текстовый запрос. Можно приложить фото с подписью, тогда оно уйдет в RunPod как source_image. /id покажет chat_id."
+            "Пришли текстовый запрос. Фото не отправляются в RunPod; workflow использует постоянную картинку в LoadImage. /id покажет chat_id."
         )
 
     async def chat_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -263,13 +258,13 @@ class BotHandlers:
 
         try:
             log_update(update, "generation_start", prompt_len=len(prompt))
-            source_image_b64 = await self.extract_source_image(update)
-            log_update(update, "generation_source_ready", has_source_image=bool(source_image_b64))
+            if update.effective_message.photo:
+                log_update(update, "source_image_ignored", reason="workflow_uses_static_load_image")
 
             await message.reply_text("Запрос отправлен в RunPod, жду генерацию.")
             await message.chat.send_action("upload_photo")
 
-            job_id, output = await asyncio.to_thread(self.generate_with_runpod, prompt, source_image_b64)
+            job_id, output = await asyncio.to_thread(self.generate_with_runpod, prompt)
             images = extract_images(output)
             log_update(update, "generation_output_received", job_id=job_id, image_count=len(images))
             if not images:
@@ -287,10 +282,9 @@ class BotHandlers:
             logging.exception("Generation failed for chat_id=%s", chat_id)
             await message.reply_text(f"Ошибка генерации: {exc}")
 
-    def generate_with_runpod(self, prompt, source_image_b64):
+    def generate_with_runpod(self, prompt):
         job_id = self.runpod.submit(
             prompt,
-            source_image_b64,
             self.config.execution_timeout_ms,
             self.config.ttl_ms,
         )
@@ -300,24 +294,6 @@ class BotHandlers:
             self.config.runpod_job_timeout,
         )
         return job_id, output
-
-    async def extract_source_image(self, update):
-        photos = update.effective_message.photo or []
-        if not photos:
-            log_update(update, "source_image_absent")
-            return None
-
-        best_photo = photos[-1]
-        log_update(
-            update,
-            "source_image_selected",
-            file_id_tail=str(best_photo.file_id)[-8:],
-            file_size=best_photo.file_size or "unknown",
-        )
-        telegram_file = await best_photo.get_file()
-        content = await telegram_file.download_as_bytearray()
-        log_update(update, "source_image_downloaded", bytes=len(content))
-        return base64.b64encode(content).decode("ascii")
 
     async def ensure_allowed(self, update):
         chat_id = update.effective_chat.id

@@ -19,7 +19,6 @@ PROMPT_NODE_ID = os.getenv("PROMPT_NODE_ID", "6")
 SOURCE_IMAGE_NODE_ID = os.getenv("SOURCE_IMAGE_NODE_ID", "17")
 REQUEST_TIMEOUT = int(os.getenv("COMFYUI_REQUEST_TIMEOUT", "30"))
 WEBSOCKET_TIMEOUT = int(os.getenv("COMFYUI_WEBSOCKET_TIMEOUT", "900"))
-MAX_SOURCE_IMAGE_BYTES = int(os.getenv("MAX_SOURCE_IMAGE_BYTES", str(12 * 1024 * 1024)))
 
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
@@ -56,15 +55,6 @@ def update_workflow_prompt(workflow, user_prompt):
     return workflow
 
 
-def update_workflow_source(workflow, source_filename):
-    source_node = workflow.get(SOURCE_IMAGE_NODE_ID)
-    if not source_node or source_node.get("class_type") != "LoadImage":
-        raise ValueError(f"Source image node {SOURCE_IMAGE_NODE_ID!r} is missing or is not LoadImage")
-
-    source_node["inputs"]["image"] = source_filename
-    return workflow
-
-
 def validate_default_source_image(workflow):
     source_node = workflow.get(SOURCE_IMAGE_NODE_ID)
     source_filename = source_node.get("inputs", {}).get("image") if source_node else None
@@ -74,9 +64,9 @@ def validate_default_source_image(workflow):
     source_path = Path(INPUT_DIR) / source_filename
     if not source_path.exists():
         raise FileNotFoundError(
-            f"No source_image was provided and default workflow image is missing: "
-            f"{source_path}. Send a photo with the Telegram prompt or put this file into "
-            f"the ComfyUI input folder on the RunPod network volume."
+            f"Default workflow image is missing: {source_path}. Put this file into "
+            f"the ComfyUI input folder on the RunPod network volume. Telegram photos "
+            f"are intentionally ignored."
         )
 
 
@@ -187,41 +177,6 @@ def resolve_output_path(image_info):
     return path
 
 
-def strip_data_uri_prefix(source_image):
-    if "," in source_image and source_image.strip().lower().startswith("data:"):
-        return source_image.split(",", 1)[1]
-    return source_image
-
-
-def detect_image_extension(content):
-    if content.startswith(b"\x89PNG\r\n\x1a\n"):
-        return ".png"
-    if content.startswith(b"\xff\xd8\xff"):
-        return ".jpg"
-    if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
-        return ".webp"
-    return ".png"
-
-
-def save_source_image(source_image, task_id):
-    if source_image.startswith("http"):
-        response = requests.get(source_image, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        content = response.content
-    else:
-        content = base64.b64decode(strip_data_uri_prefix(source_image), validate=True)
-
-    if len(content) > MAX_SOURCE_IMAGE_BYTES:
-        raise ValueError("Source image is too large")
-
-    os.makedirs(INPUT_DIR, exist_ok=True)
-    source_path = f"{INPUT_DIR}/source_{task_id}{detect_image_extension(content)}"
-    with open(source_path, "wb") as f:
-        f.write(content)
-
-    return source_path
-
-
 def handler(job):
     started_at = time.monotonic()
     job_input = job.get("input", {})
@@ -232,25 +187,16 @@ def handler(job):
     if not user_prompt:
         return {"error": "Field 'prompt' is required"}
 
-    source_image = job_input.get("source_image")
-    task_id = str(uuid.uuid4())[:8]
-    source_path = None
+    source_image_ignored = bool(job_input.get("source_image"))
     result_paths = []
 
     try:
-        log(f"job_start prompt_len={len(user_prompt)} has_source_image={bool(source_image)}")
-        if source_image:
-            source_path = save_source_image(str(source_image), task_id)
-            log(f"source_image_saved path={source_path}")
+        log(f"job_start prompt_len={len(user_prompt)} source_image_ignored={source_image_ignored}")
 
         workflow = load_workflow()
         validate_workflow(workflow)
         workflow = update_workflow_prompt(workflow, user_prompt)
-
-        if source_path:
-            workflow = update_workflow_source(workflow, os.path.basename(source_path))
-        else:
-            validate_default_source_image(workflow)
+        validate_default_source_image(workflow)
 
         log("queue_prompt_start")
         result_paths = run_workflow(workflow)
@@ -270,11 +216,6 @@ def handler(job):
         log(f"job_error error={exc} elapsed={time.monotonic() - started_at:.1f}s")
         return {"error": str(exc)}
     finally:
-        if source_path and os.path.exists(source_path):
-            try:
-                os.remove(source_path)
-            except OSError:
-                pass
         for path in result_paths:
             if os.path.exists(path):
                 try:

@@ -98,7 +98,7 @@ Keep `TELEGRAM_ALLOWED_CHAT_IDS` set after testing so random users cannot spend 
 ## Messages
 
 - Plain text: sent as `input.prompt`.
-- Photo with caption: caption is sent as `input.prompt`, photo is sent as `input.source_image`.
+- Photo with caption: caption is sent as `input.prompt`; the photo itself is ignored.
 - `/generate your prompt`: same as plain text, with `/generate` stripped.
 - `/health`: calls `GET /health` on the RunPod endpoint.
 
