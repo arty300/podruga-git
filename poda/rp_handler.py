@@ -23,8 +23,15 @@ WEBSOCKET_CONNECT_TIMEOUT = int(os.getenv("COMFYUI_WEBSOCKET_CONNECT_TIMEOUT", "
 
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
-    "high quality, detailed, photorealistic, natural lighting",
+    "",
 )
+USE_WORKFLOW_PROMPT_AS_SYSTEM_PROMPT = os.getenv("USE_WORKFLOW_PROMPT_AS_SYSTEM_PROMPT", "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+PROMPT_LOG_PREVIEW_CHARS = int(os.getenv("PROMPT_LOG_PREVIEW_CHARS", "180"))
 
 
 def log(message):
@@ -51,9 +58,61 @@ def update_workflow_prompt(workflow, user_prompt):
     if not prompt_node or prompt_node.get("class_type") != "CLIPTextEncode":
         raise ValueError(f"Prompt node {PROMPT_NODE_ID!r} is missing or is not CLIPTextEncode")
 
-    prompt_parts = [SYSTEM_PROMPT.strip(), user_prompt.strip()]
-    prompt_node["inputs"]["text"] = ", ".join(part for part in prompt_parts if part)
+    workflow_prompt = str(prompt_node.get("inputs", {}).get("text", "")).strip()
+    prompt_parts = []
+    if USE_WORKFLOW_PROMPT_AS_SYSTEM_PROMPT:
+        prompt_parts.append(workflow_prompt)
+    prompt_parts.extend([SYSTEM_PROMPT.strip(), user_prompt.strip()])
+    final_prompt = ", ".join(part for part in prompt_parts if part)
+    prompt_node["inputs"]["text"] = final_prompt
+    log(
+        "prompt_node_updated "
+        f"workflow_prompt_len={len(workflow_prompt)} "
+        f"system_prompt_len={len(SYSTEM_PROMPT.strip())} "
+        f"user_prompt_len={len(user_prompt.strip())} "
+        f"final_prompt_len={len(final_prompt)} "
+        f"preview={final_prompt[:PROMPT_LOG_PREVIEW_CHARS]!r}"
+    )
     return workflow
+
+
+def log_asset(label, path):
+    path = Path(path)
+    try:
+        size = path.stat().st_size
+        log(f"asset_check label={label} exists=True bytes={size} path={path}")
+    except FileNotFoundError:
+        log(f"asset_check label={label} exists=False path={path}")
+
+
+def log_reactor_model_candidates(model_name):
+    for path in [
+        Path("/comfyui/models/insightface") / model_name,
+        Path("/comfyui/models/insightface/models") / model_name,
+        Path("/comfyui/models/reactor") / model_name,
+        Path("/comfyui/models/facerestore_models") / model_name,
+        Path("/runpod-volume") / model_name,
+    ]:
+        log_asset(f"reactor_candidate:{model_name}", path)
+
+
+def log_workflow_assets(workflow):
+    for node_id, node in workflow.items():
+        inputs = node.get("inputs", {})
+        class_type = node.get("class_type")
+
+        if class_type == "CheckpointLoaderSimple" and inputs.get("ckpt_name"):
+            log_asset(f"node_{node_id}:checkpoint", Path("/comfyui/models/checkpoints") / inputs["ckpt_name"])
+        elif class_type == "LoraLoader" and inputs.get("lora_name"):
+            log_asset(f"node_{node_id}:lora", Path("/comfyui/models/loras") / inputs["lora_name"])
+        elif class_type == "SAMLoader" and inputs.get("model_name"):
+            log_asset(f"node_{node_id}:sam", Path("/comfyui/models/sams") / inputs["model_name"])
+        elif class_type == "UltralyticsDetectorProvider" and inputs.get("model_name"):
+            log_asset(f"node_{node_id}:ultralytics", Path("/comfyui/models/ultralytics") / inputs["model_name"])
+        elif class_type == "LoadImage" and inputs.get("image"):
+            log_asset(f"node_{node_id}:load_image", Path(INPUT_DIR) / inputs["image"])
+        elif class_type == "ReActorFaceSwap" and inputs.get("swap_model"):
+            log_reactor_model_candidates(inputs["swap_model"])
 
 
 def validate_default_source_image(workflow):
@@ -208,6 +267,7 @@ def handler(job):
 
         workflow = load_workflow()
         validate_workflow(workflow)
+        log_workflow_assets(workflow)
         workflow = update_workflow_prompt(workflow, user_prompt)
         validate_default_source_image(workflow)
 
