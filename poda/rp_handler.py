@@ -23,6 +23,11 @@ WEBSOCKET_TIMEOUT = int(os.getenv("COMFYUI_WEBSOCKET_TIMEOUT", "900"))
 WEBSOCKET_CONNECT_TIMEOUT = int(os.getenv("COMFYUI_WEBSOCKET_CONNECT_TIMEOUT", "30"))
 RANDOMIZE_SEEDS = os.getenv("RANDOMIZE_SEEDS", "1").strip().lower() in {"1", "true", "yes", "on"}
 MAX_SEED = int(os.getenv("MAX_SEED", str(2**63 - 1)))
+OUTPUT_NODE_IDS = {
+    part.strip()
+    for part in os.getenv("OUTPUT_NODE_IDS", "15").split(",")
+    if part.strip()
+}
 
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
@@ -228,7 +233,12 @@ def get_output_images(prompt_id):
 
     outputs = history.get("outputs", {})
     images = []
-    for node_output in outputs.values():
+    if OUTPUT_NODE_IDS:
+        log(f"output_filter_enabled node_ids={','.join(sorted(OUTPUT_NODE_IDS))}")
+    for node_id, node_output in outputs.items():
+        if OUTPUT_NODE_IDS and str(node_id) not in OUTPUT_NODE_IDS:
+            log(f"output_filter_skipped node_id={node_id}")
+            continue
         images.extend(node_output.get("images", []))
     return images
 
