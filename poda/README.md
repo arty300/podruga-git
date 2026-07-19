@@ -51,6 +51,8 @@ COMFYUI_WEBSOCKET_CONNECT_TIMEOUT=30
 USE_WORKFLOW_PROMPT_AS_SYSTEM_PROMPT=1
 SYSTEM_PROMPT=
 PROMPT_LOG_PREVIEW_CHARS=180
+RANDOMIZE_SEEDS=1
+MAX_SEED=9223372036854775807
 # Keep this disabled for fast cold starts. Use only for emergency debugging.
 ALLOW_RUNTIME_PIP_INSTALL=0
 # Default is symlinks from network volume. Set 1 only if you explicitly need copies.
@@ -149,7 +151,7 @@ DOCKERHUB_TOKEN=<Docker Hub access token>
 Inputs:
 
 ```text
-image_tag=v24
+image_tag=v25
 build_base=false
 ```
 
@@ -158,7 +160,7 @@ Use `build_base=true` when CUDA/PyTorch/ComfyUI/dependencies changed. For small 
 After the workflow finishes, set the RunPod image to:
 
 ```text
-drenk/elina-generator:v24
+drenk/elina-generator:v25
 ```
 
 ### Option B: Local build
@@ -182,8 +184,8 @@ ModuleNotFoundError: No module named 'segment_anything'
 Then build the small deploy image when `rp_handler.py`, `start.sh`, or `elina_api.json` changes:
 
 ```bash
-docker build -t drenk/elina-generator:v24 .
-docker push drenk/elina-generator:v24
+docker build -t drenk/elina-generator:v25 .
+docker push drenk/elina-generator:v25
 ```
 
 Do not use `--no-cache` for normal rebuilds. Use it only when the base image itself must be rebuilt from scratch:

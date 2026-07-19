@@ -9,5 +9,5 @@ The bot sends prompts to the deployed RunPod endpoint. The pod/worker runs Comfy
 
 Images built by GitHub Actions:
 
-- `drenk/elina-generator:v24`: RunPod worker.
+- `drenk/elina-generator:v25`: RunPod worker.
 - `drenk/elina-telegram-bot:latest`: Telegram bot.

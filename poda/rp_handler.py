@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import random
 import time
 import uuid
 from pathlib import Path
@@ -20,6 +21,8 @@ SOURCE_IMAGE_NODE_ID = os.getenv("SOURCE_IMAGE_NODE_ID", "17")
 REQUEST_TIMEOUT = int(os.getenv("COMFYUI_REQUEST_TIMEOUT", "30"))
 WEBSOCKET_TIMEOUT = int(os.getenv("COMFYUI_WEBSOCKET_TIMEOUT", "900"))
 WEBSOCKET_CONNECT_TIMEOUT = int(os.getenv("COMFYUI_WEBSOCKET_CONNECT_TIMEOUT", "30"))
+RANDOMIZE_SEEDS = os.getenv("RANDOMIZE_SEEDS", "1").strip().lower() in {"1", "true", "yes", "on"}
+MAX_SEED = int(os.getenv("MAX_SEED", str(2**63 - 1)))
 
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
@@ -113,6 +116,26 @@ def log_workflow_assets(workflow):
             log_asset(f"node_{node_id}:load_image", Path(INPUT_DIR) / inputs["image"])
         elif class_type == "ReActorFaceSwap" and inputs.get("swap_model"):
             log_reactor_model_candidates(inputs["swap_model"])
+
+
+def randomize_workflow_seeds(workflow):
+    if not RANDOMIZE_SEEDS:
+        log("seed_randomize_skipped")
+        return workflow
+
+    changed = []
+    for node_id, node in workflow.items():
+        inputs = node.get("inputs", {})
+        if "seed" not in inputs:
+            continue
+
+        old_seed = inputs["seed"]
+        new_seed = random.randint(0, MAX_SEED)
+        inputs["seed"] = new_seed
+        changed.append(f"{node_id}:{old_seed}->{new_seed}")
+
+    log(f"seed_randomized count={len(changed)} values={';'.join(changed)}")
+    return workflow
 
 
 def validate_default_source_image(workflow):
@@ -226,6 +249,8 @@ def run_workflow(workflow):
         path = resolve_output_path(img)
         if path and path.exists():
             result_paths.append(str(path))
+        elif path:
+            log(f"output_file_missing path={path}")
 
     return result_paths
 
@@ -269,6 +294,7 @@ def handler(job):
         validate_workflow(workflow)
         log_workflow_assets(workflow)
         workflow = update_workflow_prompt(workflow, user_prompt)
+        workflow = randomize_workflow_seeds(workflow)
         validate_default_source_image(workflow)
 
         log("queue_prompt_start")
